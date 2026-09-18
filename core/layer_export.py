@@ -1,0 +1,1 @@
+"""FFT result persistence and layered-plot helpers."""
