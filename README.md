@@ -16,11 +16,11 @@ Projektet byggs stegvis. Följande delar är klara just nu:
 - [x] Före- och eftervisning av spektrum i brusreduceringsfliken
 - [x] Sparande av brusreducerad ljudfil som WAV
 - [x] Grundläggande kontrolltest av harmonisk bevaring
-- [ ] Fullständig FFT-analysflik
-- [ ] Sparande av FFT-grafer och rådata
-- [ ] Lagerjämförelse av flera FFT-resultat
-- [ ] Av/på-kontroller för enskilda lager
-- [ ] Export av sammanslagna lagergrafer
+- [x] Fullständig FFT-analysflik
+- [x] Sparande av FFT-grafer och rådata
+- [x] Lagerjämförelse av flera FFT-resultat
+- [x] Av/på-kontroller för enskilda lager
+- [x] Export av sammanslagna lagergrafer
 - [ ] Mer omfattande tester med riktiga inspelningar
 
 ## Funktioner
@@ -47,18 +47,28 @@ Algoritmen kan fortfarande behöva finjusteras för olika typer av inspelningar.
 
 ### 2. FFT-analys
 
-FFT-fliken finns i huvudfönstret som en separat placeholder, men själva funktionen är ännu inte implementerad. Den planerade funktionen ska:
+FFT-fliken är implementerad som en självständig funktion. Användaren kan:
 
-- Läsa in en inspelad enskild ton.
-- Beräkna FFT över hela signalen eller ett valt utsnitt.
+- Välja en WAV-, MP3- eller FLAC-fil med en inspelad ton.
+- Ange ett tonnamn, exempelvis `A4`, och instrument, exempelvis `guitar`.
+- Beräkna en ensidig FFT över hela ljudsignalen.
 - Visa frekvens på x-axeln och amplitud i dB på y-axeln.
-- Fokusera visningen på 0 till 5000 Hz.
-- Spara grafen som PNG.
-- Spara frekvens- och amplitudpar som CSV eller JSON.
+- Visa och exportera frekvensområdet 0 till 5000 Hz.
+- Spara både diagrammet som PNG och frekvens/amplitud-paren som CSV.
+
+FFT:n använder ett Hann-fönster för att minska läckage från signalens ändpunkter. En fönsterkorrigering används före amplitudberäkningen, och resultatet sparas i `data/fft_results/` med tonnamn, instrument och tidsstämpel i filnamnet. Om samplingsfrekvensen ger en lägre Nyquistfrekvens än 5000 Hz används den lägre gränsen automatiskt.
 
 ### 3. Lagerjämförelse
 
-Lagerjämförelsefliken finns också som en separat placeholder. Den planerade funktionen ska läsa sparade FFT-resultat, rita flera kurvor i samma diagram och ge varje lager en egen färg. Användaren ska kunna slå av och på individuella lager samt exportera den sammanslagna grafen som PNG.
+Lagerjämförelsefliken är implementerad och arbetar med CSV-filerna från FFT-fliken. Användaren kan:
+
+- Välja flera sparade FFT-resultat samtidigt.
+- Visa kurvorna överlagrade i samma diagram.
+- Slå av och på varje lager med en individuell checkbox.
+- Se en legend med lagrens filnamn.
+- Exportera de synliga lagren som en ny PNG-fil.
+
+Alla lager visas inom 0-5000 Hz. Exporterna sparas i `data/layered_exports/` med tidsstämpel i filnamnet.
 
 ## Teknisk struktur
 
@@ -91,12 +101,12 @@ project_root/
 - `main.py`: startar QApplication och huvudfönstret.
 - `gui/main_window.py`: skapar huvudfönstret, de tre flikarna och datamapparna.
 - `gui/noise_reduction_tab.py`: gränssnitt för ljudval, förhandsvisning och sparande.
-- `gui/fft_analysis_tab.py`: reserverad för FFT-analys.
-- `gui/layer_comparison_tab.py`: reserverad för lagerjämförelse.
+- `gui/fft_analysis_tab.py`: gränssnitt för FFT-analys och export.
+- `gui/layer_comparison_tab.py`: gränssnitt för att välja, toggla och exportera FFT-lager.
 - `core/audio_io.py`: läser ljudfiler och sparar WAV-filer.
 - `core/noise_reduction.py`: innehåller den spektrala brusreduceringen.
-- `core/fft_processing.py`: reserverad för gemensamma FFT-funktioner.
-- `core/layer_export.py`: reserverad för lagring och export av jämförelser.
+- `core/fft_processing.py`: FFT-beräkning samt PNG- och CSV-export.
+- `core/layer_export.py`: läser FFT-CSV-filer och sparar överlagrade PNG-grafer.
 
 ## Installation
 
@@ -132,8 +142,8 @@ Vid programstart skapas följande mappar automatiskt om de saknas:
 
 - `data/raw_audio/`: originalinspelningar som användaren vill analysera.
 - `data/cleaned_audio/`: sparade brusreducerade WAV-filer.
-- `data/fft_results/`: framtida PNG- och CSV/JSON-resultat från FFT-analysen.
-- `data/layered_exports/`: framtida exporter från lagerjämförelsen.
+- `data/fft_results/`: PNG- och CSV-resultat från FFT-analysen.
+- `data/layered_exports/`: exporter från lagerjämförelsen.
 
 ## Använd brusreduceringen
 
@@ -145,7 +155,30 @@ Vid programstart skapas följande mappar automatiskt om de saknas:
 6. Klicka på `Reduce noise and save` när resultatet är rimligt.
 7. Den nya filen sparas i `data/cleaned_audio/` med tidsstämpel i filnamnet.
 
-Diagrammet visar hela det analyserade frekvensområdet i brusreduceringsfliken. Begränsningen till 0-5000 Hz hör till den framtida separata FFT-analysen, inte till brusreduceringens preview.
+Diagrammet visar hela det analyserade frekvensområdet i brusreduceringsfliken. Begränsningen till 0-5000 Hz gäller den separata FFT-analysen, inte brusreduceringens preview.
+
+## Använd FFT-analysen
+
+1. Starta programmet.
+2. Öppna fliken `FFT analysis`.
+3. Klicka på `Select audio file` och välj en WAV-, MP3- eller FLAC-fil.
+4. Ange tonnamn och instrument för ett tydligt filnamn.
+5. Klicka på `Analyze FFT`.
+6. Kontrollera spektrumet mellan 0 och 5000 Hz.
+7. Klicka på `Save PNG and CSV`.
+
+Två filer sparas i `data/fft_results/`: en PNG-bild och en CSV-fil med kolumnerna `frequency_hz` och `amplitude_db`. CSV-filen är den rådata som senare ska användas av lagerjämförelsen.
+
+## Använd lagerjämförelsen
+
+1. Skapa och spara minst två FFT-resultat från fliken `FFT analysis`.
+2. Öppna fliken `Layer comparison`.
+3. Klicka på `Select FFT CSV files`.
+4. Markera en eller flera CSV-filer i `data/fft_results/`.
+5. Använd checkboxarna för att slå av eller på enskilda kurvor.
+6. Klicka på `Export layered PNG` för att spara den synliga jämförelsen.
+
+Den exporterade bilden sparas i `data/layered_exports/`. `Clear layers` tömmer den aktuella jämförelsen så att en ny uppsättning filer kan väljas.
 
 ## Testning
 
@@ -189,23 +222,23 @@ Det finns ännu ingen komplett automatiserad testsvit. Nästa teststeg är teste
 
 ### Etapp 3: FFT-analys
 
-- [ ] Implementera FFT-beräkning i `core/fft_processing.py`.
-- [ ] Bygga filväljare och analysknapp i FFT-fliken.
-- [ ] Visa frekvensområdet 0-5000 Hz.
-- [ ] Visa amplitud på logaritmisk dB-skala.
+- [x] Implementera FFT-beräkning i `core/fft_processing.py`.
+- [x] Bygga filväljare och analysknapp i FFT-fliken.
+- [x] Visa frekvensområdet 0-5000 Hz.
+- [x] Visa amplitud på logaritmisk dB-skala.
 - [ ] Lägga till val av hela signalen eller ett tidsutsnitt.
-- [ ] Spara graf som PNG.
-- [ ] Spara frekvens/amplitud som CSV eller JSON.
-- [ ] Använda tydliga filnamn med ton, instrument och tidsstämpel.
+- [x] Spara graf som PNG.
+- [x] Spara frekvens/amplitud som CSV eller JSON.
+- [x] Använda tydliga filnamn med ton, instrument och tidsstämpel.
 
 ### Etapp 4: Lagerjämförelse
 
-- [ ] Implementera laddning av sparade FFT-resultat.
-- [ ] Visa flera spektrum som överlagrade kurvor.
-- [ ] Ge varje lager en egen färg och legendtext.
-- [ ] Lägga till av/på-kontroll för varje lager.
-- [ ] Exportera den sammanslagna vyn som PNG.
-- [ ] Spara exporter i `data/layered_exports/`.
+- [x] Implementera laddning av sparade FFT-resultat.
+- [x] Visa flera spektrum som överlagrade kurvor.
+- [x] Ge varje lager en egen färg och legendtext.
+- [x] Lägga till av/på-kontroll för varje lager.
+- [x] Exportera den sammanslagna vyn som PNG.
+- [x] Spara exporter i `data/layered_exports/`.
 
 ### Etapp 5: Kvalitet och rapportunderlag
 
@@ -218,8 +251,8 @@ Det finns ännu ingen komplett automatiserad testsvit. Nästa teststeg är teste
 
 ## Begränsningar just nu
 
-- FFT- och lagerflikarna är ännu inte funktionella.
-- `core/fft_processing.py` och `core/layer_export.py` innehåller ännu inga implementationer.
+- FFT-analysen arbetar över hela signalen; tidsutsnitt är ännu inte implementerat.
+- Lagerjämförelsen kräver att CSV-filer först skapas via FFT-fliken.
 - Brusreduceringen antar i praktiken att delar av inspelningen representerar bakgrundsbrus.
 - En mycket svag eller konstant ton kan påverka uppskattningen av brusgolvet.
 - MP3-avkodning kräver att alla ljudberoenden i `requirements.txt` är korrekt installerade.
