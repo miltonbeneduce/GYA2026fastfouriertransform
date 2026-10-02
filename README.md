@@ -53,10 +53,12 @@ FFT-fliken är implementerad som en självständig funktion. Användaren kan:
 - Ange ett tonnamn, exempelvis `A4`, och instrument, exempelvis `guitar`.
 - Beräkna en ensidig FFT över hela ljudsignalen.
 - Visa frekvens på x-axeln och amplitud i dB på y-axeln.
+- Normalisera spektrumet så att den starkaste toppen visas som 0 dB.
 - Visa och exportera frekvensområdet 0 till 5000 Hz.
 - Spara både diagrammet som PNG och frekvens/amplitud-paren som CSV.
+- Zooma och panorera i diagrammet, markera flera datapunkter och spara urvalet som CSV.
 
-FFT:n använder ett Hann-fönster för att minska läckage från signalens ändpunkter. En fönsterkorrigering används före amplitudberäkningen, och resultatet sparas i `data/fft_results/` med tonnamn, instrument och tidsstämpel i filnamnet. Om samplingsfrekvensen ger en lägre Nyquistfrekvens än 5000 Hz används den lägre gränsen automatiskt.
+FFT:n använder ett Hann-fönster för att minska läckage från signalens ändpunkter. En fönsterkorrigering används före amplitudberäkningen. Det starkaste synliga FFT-värdet normaliseras till 0 dB, och övriga värden visas relativt toppen. Resultatet sparas i `data/fft_results/` med tonnamn, instrument och tidsstämpel i filnamnet. Om samplingsfrekvensen ger en lägre Nyquistfrekvens än 5000 Hz används den lägre gränsen automatiskt.
 
 ### 3. Lagerjämförelse
 
@@ -66,9 +68,10 @@ Lagerjämförelsefliken är implementerad och arbetar med CSV-filerna från FFT-
 - Visa kurvorna överlagrade i samma diagram.
 - Slå av och på varje lager med en individuell checkbox.
 - Se en legend med lagrens filnamn.
+- Zooma och panorera, markera datapunkter från flera lager och spara urvalet som CSV.
 - Exportera de synliga lagren som en ny PNG-fil.
 
-Alla lager visas inom 0-5000 Hz. Exporterna sparas i `data/layered_exports/` med tidsstämpel i filnamnet.
+Lagren visas med kontrasterande färger och lätt transparens inom 0-5000 Hz. Exporterna sparas i `data/layered_exports/` med tidsstämpel i filnamnet.
 
 ## Teknisk struktur
 
@@ -164,8 +167,9 @@ Diagrammet visar hela det analyserade frekvensområdet i brusreduceringsfliken. 
 3. Klicka på `Select audio file` och välj en WAV-, MP3- eller FLAC-fil.
 4. Ange tonnamn och instrument för ett tydligt filnamn.
 5. Klicka på `Analyze FFT`.
-6. Kontrollera spektrumet mellan 0 och 5000 Hz.
-7. Klicka på `Save PNG and CSV`.
+6. Kontrollera spektrumet mellan 0 och 5000 Hz; den starkaste toppen är 0 dB.
+7. Använd diagramverktygen för att zooma eller panorera. Klicka på kurvpunkter för att markera dem och välj `Save selected points` för att exportera urvalet separat.
+8. Klicka på `Save PNG and CSV`.
 
 Två filer sparas i `data/fft_results/`: en PNG-bild och en CSV-fil med kolumnerna `frequency_hz` och `amplitude_db`. CSV-filen är den rådata som senare ska användas av lagerjämförelsen.
 
@@ -176,7 +180,8 @@ Två filer sparas i `data/fft_results/`: en PNG-bild och en CSV-fil med kolumner
 3. Klicka på `Select FFT CSV files`.
 4. Markera en eller flera CSV-filer i `data/fft_results/`.
 5. Använd checkboxarna för att slå av eller på enskilda kurvor.
-6. Klicka på `Export layered PNG` för att spara den synliga jämförelsen.
+6. Zooma eller panorera och klicka på kurvpunkter för att markera punkter från olika lager. Välj `Save selected points` för att exportera urvalet med lagernamn.
+7. Klicka på `Export layered PNG` för att spara den synliga jämförelsen.
 
 Den exporterade bilden sparas i `data/layered_exports/`. `Clear layers` tömmer den aktuella jämförelsen så att en ny uppsättning filer kan väljas.
 

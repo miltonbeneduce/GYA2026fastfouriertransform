@@ -29,8 +29,8 @@ def calculate_fft(
 
 	The result is limited to ``max_frequency`` so the FFT view focuses on the
 	frequency range relevant to the project's tone comparisons. Amplitudes are
-	relative to the window-corrected signal and expressed in dBFS-like units;
-	this makes peaks easy to compare between recordings.
+	relative to the window-corrected signal and the strongest visible peak, so
+	the maximum value is 0 dB.
 	"""
 	samples = np.asarray(signal, dtype=np.float64)
 	if samples.ndim != 1 or samples.size < 2:
@@ -54,6 +54,7 @@ def calculate_fft(
 	frequency_limit = min(float(max_frequency), sample_rate / 2.0)
 	visible = frequencies <= frequency_limit
 	amplitude_db = 20.0 * np.log10(np.maximum(amplitude, 1e-12))
+	amplitude_db -= np.max(amplitude_db[visible])
 
 	return FftResult(
 		frequencies=frequencies[visible],

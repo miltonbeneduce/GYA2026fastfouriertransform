@@ -7,7 +7,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
 from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
@@ -33,6 +33,9 @@ class FftAnalysisTab(QWidget):
         self.signal: np.ndarray | None = None
         self.sample_rate: int | None = None
         self.fft_result: FftResult | None = None
+        self.selected_points: list[tuple[int, float, float]] = []
+        self.selected_points_artist = None
+        self.spectrum_line = None
 
         self.path_edit = QLineEdit()
         self.path_edit.setReadOnly(True)
@@ -50,6 +53,12 @@ class FftAnalysisTab(QWidget):
         self.save_button = QPushButton("Save PNG and CSV")
         self.save_button.setEnabled(False)
         self.save_button.clicked.connect(self.save_result)
+        self.save_points_button = QPushButton("Save selected points")
+        self.save_points_button.setEnabled(False)
+        self.save_points_button.clicked.connect(self.save_selected_points)
+        self.clear_points_button = QPushButton("Clear selection")
+        self.clear_points_button.setEnabled(False)
+        self.clear_points_button.clicked.connect(self.clear_selected_points)
 
         path_row = QHBoxLayout()
         path_row.addWidget(self.path_edit, stretch=1)
@@ -62,12 +71,16 @@ class FftAnalysisTab(QWidget):
         button_row = QHBoxLayout()
         button_row.addWidget(self.analyze_button)
         button_row.addWidget(self.save_button)
+        button_row.addWidget(self.save_points_button)
+        button_row.addWidget(self.clear_points_button)
         button_row.addStretch()
 
         self.status_label = QLabel("Select a recording of one tone to begin.")
         self.status_label.setWordWrap(True)
         self.figure, self.axes = plt.subplots(figsize=(9, 5), constrained_layout=True)
         self.canvas = FigureCanvasQTAgg(self.figure)
+        self.toolbar = NavigationToolbar2QT(self.canvas, self)
+        self.canvas.mpl_connect("pick_event", self._on_pick)
         self.axes.set_title("FFT spectrum")
         self.axes.set_xlabel("Frequency (Hz)")
         self.axes.set_ylabel("Amplitude (dB)")
@@ -80,6 +93,7 @@ class FftAnalysisTab(QWidget):
         layout.addLayout(metadata_form)
         layout.addLayout(button_row)
         layout.addWidget(self.status_label)
+        layout.addWidget(self.toolbar)
         layout.addWidget(self.canvas, stretch=1)
 
     def select_file(self) -> None:
@@ -103,6 +117,8 @@ class FftAnalysisTab(QWidget):
         self.signal = signal
         self.sample_rate = sample_rate
         self.fft_result = None
+        self.clear_selected_points()
+        self.spectrum_line = None
         self.path_edit.setText(str(self.selected_path))
         if not self.tone_edit.text():
             self.tone_edit.setText(self.selected_path.stem)
@@ -125,11 +141,14 @@ class FftAnalysisTab(QWidget):
             return
 
         self.axes.clear()
-        self.axes.plot(
+        self.selected_points.clear()
+        self.selected_points_artist = None
+        (self.spectrum_line,) = self.axes.plot(
             self.fft_result.frequencies,
             self.fft_result.amplitude_db,
             color="#3366cc",
             linewidth=1,
+            picker=5,
         )
         self.axes.set_title("FFT spectrum (0-5000 Hz)")
         self.axes.set_xlabel("Frequency (Hz)")
@@ -137,10 +156,80 @@ class FftAnalysisTab(QWidget):
         self.axes.set_xlim(0, min(5000, self.sample_rate / 2))
         self.axes.grid(True, alpha=0.25)
         self.canvas.draw_idle()
+        self._update_selection_controls()
         self.save_button.setEnabled(True)
         self.status_label.setText(
             f"FFT calculated using {self.fft_result.sample_count:,} samples."
         )
+
+    def _on_pick(self, event) -> None:
+        """Select the nearest FFT bin clicked on the spectrum line."""
+        if event.artist is not self.spectrum_line or not len(event.ind):
+            return
+        indices = np.asarray(event.ind, dtype=int)
+        points = np.column_stack((
+            self.spectrum_line.get_xdata()[indices],
+            self.spectrum_line.get_ydata()[indices],
+        ))
+        screen_points = self.axes.transData.transform(points)
+        mouse_position = np.array([event.mouseevent.x, event.mouseevent.y])
+        selected_index = int(indices[np.argmin(np.sum((screen_points - mouse_position) ** 2, axis=1))])
+        if any(index == selected_index for index, _, _ in self.selected_points):
+            return
+        self.selected_points.append((
+            selected_index,
+            float(self.spectrum_line.get_xdata()[selected_index]),
+            float(self.spectrum_line.get_ydata()[selected_index]),
+        ))
+        self._draw_selected_points()
+        self._update_selection_controls()
+
+    def _draw_selected_points(self) -> None:
+        if self.selected_points_artist is not None:
+            self.selected_points_artist.remove()
+            self.selected_points_artist = None
+        if self.selected_points:
+            self.selected_points_artist = self.axes.scatter(
+                [frequency for _, frequency, _ in self.selected_points],
+                [amplitude for _, _, amplitude in self.selected_points],
+                s=38,
+                facecolors="none",
+                edgecolors="#d62728",
+                linewidths=1.5,
+                zorder=4,
+            )
+        self.canvas.draw_idle()
+
+    def _update_selection_controls(self) -> None:
+        has_selection = bool(self.selected_points)
+        self.save_points_button.setEnabled(has_selection)
+        self.clear_points_button.setEnabled(has_selection)
+
+    def clear_selected_points(self) -> None:
+        self.selected_points.clear()
+        self._draw_selected_points()
+        self._update_selection_controls()
+
+    def save_selected_points(self) -> None:
+        if not self.selected_points:
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save selected FFT points",
+            "selected_fft_points.csv",
+            "CSV files (*.csv)",
+        )
+        if not path:
+            return
+        points = np.asarray([(frequency, amplitude) for _, frequency, amplitude in self.selected_points])
+        np.savetxt(
+            path,
+            points,
+            delimiter=",",
+            header="frequency_hz,amplitude_db",
+            comments="",
+        )
+        self.status_label.setText(f"Saved {len(points)} selected point(s) to {path}.")
 
     def save_result(self) -> None:
         """Save the current spectrum as one PNG and one CSV file."""

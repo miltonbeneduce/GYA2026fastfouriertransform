@@ -58,7 +58,7 @@ def save_layered_plot(
 	output_path.parent.mkdir(parents=True, exist_ok=True)
 	figure, axes = plt.subplots(figsize=(10, 5), constrained_layout=True)
 	try:
-		colors = plt.get_cmap("tab10")(np.linspace(0, 1, max(len(layers), 2)))
+		colors = plt.get_cmap("tab10").colors
 		plotted = 0
 		for index, layer in enumerate(layers):
 			if visible_layers is not None and layer.label not in visible_layers:
@@ -67,8 +67,9 @@ def save_layered_plot(
 				layer.frequencies,
 				layer.amplitude_db,
 				label=layer.label,
-				color=colors[index],
-				linewidth=1,
+				color=colors[index % len(colors)],
+				alpha=0.72,
+				linewidth=1.2,
 			)
 			plotted += 1
 		if plotted == 0:
