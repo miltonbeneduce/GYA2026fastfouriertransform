@@ -216,7 +216,7 @@ class FftAnalysisTab(QWidget):
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Save selected FFT points",
-            "selected_fft_points.csv",
+            str(Path("data", "fft_results", "selected_points.csv")),
             "CSV files (*.csv)",
         )
         if not path:

@@ -198,7 +198,7 @@ class LayerComparisonTab(QWidget):
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Save selected CSV points",
-            "selected_fft_points.csv",
+            str(Path("data", "layered_exports", "selected_points.csv")),
             "CSV files (*.csv)",
         )
         if not path:
