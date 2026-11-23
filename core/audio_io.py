@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import librosa
 import numpy as np
 import soundfile as sf
 
@@ -12,15 +11,17 @@ import soundfile as sf
 def load_audio(path: str | Path) -> tuple[np.ndarray, int]:
 	"""Load an audio file as a mono floating-point signal and sample rate.
 
-	``librosa`` is used here because it can decode the WAV, FLAC, and MP3
-	formats accepted by the application. Keeping the original sample rate is
+	``soundfile`` (libsndfile) decodes the WAV, FLAC and MP3 formats accepted
+	by the application, without pulling in scipy (whose DLLs can be blocked
+	by Windows Smart App Control). Keeping the original sample rate is
 	important: resampling would change the frequency positions shown later.
 	"""
 	audio_path = Path(path)
 	if not audio_path.is_file():
 		raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
-	signal, sample_rate = librosa.load(audio_path, sr=None, mono=True)
+	samples, sample_rate = sf.read(audio_path, dtype="float64", always_2d=True)
+	signal = samples.mean(axis=1)
 	if signal.size == 0:
 		raise ValueError("The selected audio file contains no samples.")
 	return signal.astype(np.float64, copy=False), int(sample_rate)
