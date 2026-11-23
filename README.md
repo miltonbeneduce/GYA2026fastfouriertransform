@@ -9,7 +9,8 @@ Programmet är tänkt att användas för att jämföra exempelvis samma ton spel
 Projektet byggs stegvis. Följande delar är klara just nu:
 
 - [x] Körbart lokalt PySide6-program
-- [x] Huvudfönster med tre separata flikar
+- [x] Huvudfönster med fyra separata flikar
+- [x] Guidad inspelning av enskilda toner som FLAC (piano, gitarr, eget instrument)
 - [x] Automatisk skapning av programmets datamappar
 - [x] Ljudinläsning för WAV, MP3 och FLAC
 - [x] Spektral brusreducering med STFT
@@ -25,7 +26,27 @@ Projektet byggs stegvis. Följande delar är klara just nu:
 
 ## Funktioner
 
-### 1. Brusreducering
+### 1. Toninspelning
+
+Fliken `Note recorder` gör det snabbt att spela in många enskilda toner, till exempel alla tangenter på ett piano eller band 0-12 på alla strängar på en gitarr. Användaren kan:
+
+- Välja instrument: piano med valbart omfång (A0-C8 som standard), gitarr i standardstämning (band 0-12, sträng för sträng från låga E, 78 toner) eller ett eget instrument med namn och tonomfång.
+- Välja mikrofon och ett eget mappnamn, exempelvis `Eriks gitarr`.
+- Mäta rummets brusnivå så att tröskeln för anslag ställs in automatiskt.
+- Se vilken ton som ska spelas härnäst. Inspelningen startar automatiskt vid anslaget och stoppar när tonen har klingat ut.
+- Lyssna på tagningen (`L`), ta om den (`R`) och gå vidare till nästa ton (mellanslag).
+
+Varje ton sparas som en FLAC-fil (48 kHz, 24 bit, mono) i `data/raw_audio/<mappnamn>/`, så att filerna direkt kan öppnas i brusreduceringen och FFT-analysen. Filnamnen innehåller instrument, ton och MIDI-nummer, till exempel `piano_C4_060.flac` och `guitar_string6_fret03_G2_043.flac`.
+
+Efterbearbetningen är försiktig så att den inte påverkar klangen:
+
+- Tystnaden före anslaget klipps bort, med 5 ms marginal.
+- Tystnaden efter utklingningen klipps bort. 0,3 s svans behålls och avslutas med en mjuk fade-out på 50 ms.
+- Ingen normalisering görs, så den naturliga dynamiken mellan tonerna bevaras.
+
+Om signalen klipper, eller om maxlängden nås innan tonen klingat ut, visas en varning.
+
+### 2. Brusreducering
 
 Brusreduceringen är den första färdigbyggda funktionen. Användaren kan:
 
@@ -45,7 +66,7 @@ Brusreduceringen använder inte ett enkelt lågpassfilter. Ett lågpassfilter sk
 
 Algoritmen kan fortfarande behöva finjusteras för olika typer av inspelningar. Särskilt varierande eller icke-stationärt brus bör testas med riktiga ljudfiler innan slutliga slutsatser dras i rapporten.
 
-### 2. FFT-analys
+### 3. FFT-analys
 
 FFT-fliken är implementerad som en självständig funktion. Användaren kan:
 
@@ -60,7 +81,7 @@ FFT-fliken är implementerad som en självständig funktion. Användaren kan:
 
 FFT:n använder ett Hann-fönster för att minska läckage från signalens ändpunkter. En fönsterkorrigering används före amplitudberäkningen. Det starkaste synliga FFT-värdet normaliseras till 0 dB, och övriga värden visas relativt toppen. Resultatet sparas i `data/fft_results/` med tonnamn, instrument och tidsstämpel i filnamnet. Om samplingsfrekvensen ger en lägre Nyquistfrekvens än 5000 Hz används den lägre gränsen automatiskt.
 
-### 3. Lagerjämförelse
+### 4. Lagerjämförelse
 
 Lagerjämförelsefliken är implementerad och arbetar med CSV-filerna från FFT-fliken. Användaren kan:
 
@@ -83,15 +104,19 @@ project_root/
 ├── gui/
 │   ├── __init__.py
 │   ├── main_window.py
+│   ├── note_recorder_tab.py
 │   ├── noise_reduction_tab.py
 │   ├── fft_analysis_tab.py
 │   └── layer_comparison_tab.py
 ├── core/
 │   ├── __init__.py
 │   ├── audio_io.py
+│   ├── note_recording.py
 │   ├── noise_reduction.py
 │   ├── fft_processing.py
 │   └── layer_export.py
+├── tests/
+│   └── test_note_recording.py
 └── data/
 	├── raw_audio/
 	├── cleaned_audio/
@@ -102,11 +127,13 @@ project_root/
 ### Ansvarsfördelning
 
 - `main.py`: startar QApplication och huvudfönstret.
-- `gui/main_window.py`: skapar huvudfönstret, de tre flikarna och datamapparna.
+- `gui/main_window.py`: skapar huvudfönstret, de fyra flikarna och datamapparna.
+- `gui/note_recorder_tab.py`: gränssnitt för guidad inspelning av enskilda toner.
 - `gui/noise_reduction_tab.py`: gränssnitt för ljudval, förhandsvisning och sparande.
 - `gui/fft_analysis_tab.py`: gränssnitt för FFT-analys och export.
 - `gui/layer_comparison_tab.py`: gränssnitt för att välja, toggla och exportera FFT-lager.
 - `core/audio_io.py`: läser ljudfiler och sparar WAV-filer.
+- `core/note_recording.py`: tonlistor, detektering av anslag och tystnad, klippning och FLAC-export.
 - `core/noise_reduction.py`: innehåller den spektrala brusreduceringen.
 - `core/fft_processing.py`: FFT-beräkning samt PNG- och CSV-export.
 - `core/layer_export.py`: läser FFT-CSV-filer och sparar överlagrade PNG-grafer.
@@ -147,6 +174,17 @@ Vid programstart skapas följande mappar automatiskt om de saknas:
 - `data/cleaned_audio/`: sparade brusreducerade WAV-filer.
 - `data/fft_results/`: PNG- och CSV-resultat från FFT-analysen.
 - `data/layered_exports/`: exporter från lagerjämförelsen.
+
+## Använd toninspelningen
+
+1. Starta programmet och öppna fliken `Note recorder`.
+2. Välj instrument och, för piano eller eget instrument, lägsta och högsta ton.
+3. Välj mikrofon och skriv ett mappnamn, exempelvis `Eriks gitarr`.
+4. Var tyst och klicka på `Measure noise` så att tröskeln ställs in. Den röda linjen i nivåmätaren visar tröskeln.
+5. Klicka på `Start session` och spela tonen som visas.
+6. När det står `Saved ✓`: tryck mellanslag för nästa ton, `R` för att ta om eller `L` för att lyssna. `Skip` hoppar över en ton.
+
+Tips: dämpa strängen eller släpp tangenten innan du trycker mellanslag, så att nästa inspelning inte startar av den förra tonen. Höj `Max length per note` för långa pianotoner i basen.
 
 ## Använd brusreduceringen
 
@@ -191,6 +229,12 @@ Kompilera alla Python-moduler:
 
 ```powershell
 .\venv\Scripts\python.exe -m compileall -q main.py gui core
+```
+
+Kör enhetstesterna för toninspelningen:
+
+```powershell
+.\venv\Scripts\python.exe -m unittest discover -s tests
 ```
 
 Den första signaltesten använder en syntetisk signal med 440 Hz och 880 Hz samt tillagt brus. Den kontrollerar att:

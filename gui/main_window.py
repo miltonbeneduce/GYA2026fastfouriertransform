@@ -34,8 +34,10 @@ class MainWindow(QMainWindow):
         from gui.fft_analysis_tab import FftAnalysisTab
         from gui.layer_comparison_tab import LayerComparisonTab
         from gui.noise_reduction_tab import NoiseReductionTab
+        from gui.note_recorder_tab import NoteRecorderTab
 
         tabs = QTabWidget()
+        tabs.addTab(NoteRecorderTab(), "Note recorder")
         tabs.addTab(NoiseReductionTab(), "Noise reduction")
         tabs.addTab(FftAnalysisTab(), "FFT analysis")
         tabs.addTab(LayerComparisonTab(), "Layer comparison")
