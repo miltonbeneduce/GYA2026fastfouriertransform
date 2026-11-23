@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
@@ -22,6 +23,9 @@ from PySide6.QtWidgets import (
 )
 
 from core.layer_export import FftLayer, load_fft_csv, save_layered_plot
+from gui.file_list import files_in_folder, natural_key
+
+MAX_LEGEND_ENTRIES = 20
 
 
 class LayerComparisonTab(QWidget):
@@ -30,12 +34,22 @@ class LayerComparisonTab(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.layers: list[FftLayer] = []
+        self.layer_paths: list[Path] = []
+        self._last_dir: Path | None = None
         self.layer_checks: dict[str, QCheckBox] = {}
         self.selected_points: list[tuple[str, int, float, float]] = []
         self.selected_points_artist = None
 
-        select_button = QPushButton("Select FFT CSV files")
+        select_button = QPushButton("Add FFT CSV files…")
+        select_button.setToolTip("Add one or more CSV files (Ctrl/Shift-click to select several).")
         select_button.clicked.connect(self.select_files)
+        folder_button = QPushButton("Add folder…")
+        folder_button.setToolTip("Add every CSV file in a folder. Can be repeated to combine folders.")
+        folder_button.clicked.connect(self.select_folder)
+        show_all_button = QPushButton("Show all")
+        show_all_button.clicked.connect(lambda: self._set_all_visible(True))
+        hide_all_button = QPushButton("Hide all")
+        hide_all_button.clicked.connect(lambda: self._set_all_visible(False))
         self.export_button = QPushButton("Export layered PNG")
         self.export_button.setEnabled(False)
         self.export_button.clicked.connect(self.export_plot)
@@ -50,11 +64,18 @@ class LayerComparisonTab(QWidget):
 
         button_row = QHBoxLayout()
         button_row.addWidget(select_button)
+        button_row.addWidget(folder_button)
         button_row.addWidget(self.export_button)
         button_row.addWidget(self.save_points_button)
         button_row.addWidget(self.clear_points_button)
         button_row.addWidget(clear_button)
         button_row.addStretch()
+
+        visibility_row = QHBoxLayout()
+        visibility_row.addWidget(QLabel("Layers:"))
+        visibility_row.addWidget(show_all_button)
+        visibility_row.addWidget(hide_all_button)
+        visibility_row.addStretch()
 
         self.layer_container = QWidget()
         self.layer_layout = QVBoxLayout(self.layer_container)
@@ -64,9 +85,9 @@ class LayerComparisonTab(QWidget):
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setWidget(self.layer_container)
-        scroll_area.setMaximumHeight(130)
+        scroll_area.setMaximumHeight(160)
 
-        self.status_label = QLabel("Select one or more CSV files from data/fft_results/.")
+        self.status_label = QLabel("Add CSV files or whole folders from data/fft_results/.")
         self.status_label.setWordWrap(True)
         self.figure, self.axes = plt.subplots(figsize=(9, 5), constrained_layout=True)
         self.canvas = FigureCanvasQTAgg(self.figure)
@@ -80,38 +101,86 @@ class LayerComparisonTab(QWidget):
 
         layout = QVBoxLayout(self)
         layout.addLayout(button_row)
+        layout.addLayout(visibility_row)
         layout.addWidget(scroll_area)
         layout.addWidget(self.status_label)
         layout.addWidget(self.toolbar)
         layout.addWidget(self.canvas, stretch=1)
 
     def select_files(self) -> None:
-        """Load several saved FFT CSV files and replace the current layers."""
+        """Add one or more saved FFT CSV files to the current layers."""
         paths, _ = QFileDialog.getOpenFileNames(
             self,
             "Select FFT result files",
-            str(Path("data", "fft_results")),
+            str(self._dialog_dir()),
             "FFT CSV files (*.csv)",
         )
+        if paths:
+            self.add_files(sorted((Path(path) for path in paths), key=natural_key))
+
+    def select_folder(self) -> None:
+        """Add every CSV file in a folder to the current layers."""
+        folder = QFileDialog.getExistingDirectory(self, "Select folder with FFT CSV files", str(self._dialog_dir()))
+        if not folder:
+            return
+        paths = files_in_folder(folder, (".csv",))
         if not paths:
+            QMessageBox.warning(self, "No CSV files", f"There are no CSV files in {folder}.")
             return
+        self.add_files(paths)
 
-        loaded_layers: list[FftLayer] = []
-        try:
-            for path in paths:
-                loaded_layers.append(load_fft_csv(path))
-        except (OSError, ValueError) as error:
-            QMessageBox.critical(self, "Could not load FFT data", str(error))
-            return
+    def add_files(self, paths: list[Path]) -> None:
+        """Load CSV files and append them as layers; files that fail are reported and skipped."""
+        loaded_paths = {layer_path for layer_path in self.layer_paths}
+        used_labels = {layer.label for layer in self.layers}
+        added = 0
+        failed: list[str] = []
+        for path in paths:
+            if path.resolve() in loaded_paths:
+                continue
+            try:
+                layer = load_fft_csv(path)
+            except (OSError, ValueError) as error:
+                failed.append(f"{path.name}: {error}")
+                continue
+            label = layer.label
+            if label in used_labels:  # Same file name in another folder
+                label = f"{path.parent.name}/{layer.label}"
+                number = 2
+                while label in used_labels:
+                    label = f"{path.parent.name}/{layer.label} ({number})"
+                    number += 1
+                layer = replace(layer, label=label)
+            used_labels.add(label)
+            loaded_paths.add(path.resolve())
+            self.layers.append(layer)
+            self.layer_paths.append(path.resolve())
+            added += 1
 
-        self.layers = loaded_layers
-        self.selected_points.clear()
+        self._last_dir = paths[0].parent
         self._rebuild_layer_controls()
+        self._redraw_plot()
+        if failed:
+            QMessageBox.warning(
+                self,
+                "Some files could not be loaded",
+                f"Added {added} layer(s). Skipped:\n" + "\n".join(failed),
+            )
+
+    def _dialog_dir(self) -> Path:
+        return self._last_dir or Path("data", "fft_results")
+
+    def _set_all_visible(self, visible: bool) -> None:
+        for check in self.layer_checks.values():
+            check.blockSignals(True)
+            check.setChecked(visible)
+            check.blockSignals(False)
         self._redraw_plot()
 
     def clear_layers(self) -> None:
         """Remove all loaded layers and clear the comparison plot."""
         self.layers = []
+        self.layer_paths = []
         self.selected_points.clear()
         self.selected_points_artist = None
         self._rebuild_layer_controls()
@@ -124,7 +193,7 @@ class LayerComparisonTab(QWidget):
         self.canvas.draw_idle()
         self._update_selection_controls()
         self.export_button.setEnabled(False)
-        self.status_label.setText("Select one or more CSV files from data/fft_results/.")
+        self.status_label.setText("Add CSV files or whole folders from data/fft_results/.")
 
     def export_plot(self) -> None:
         """Export the currently visible layers with a timestamped filename."""
@@ -257,9 +326,12 @@ class LayerComparisonTab(QWidget):
         self.axes.set_ylabel("Amplitude (dB)")
         self.axes.set_xlim(0, 5000)
         self.axes.grid(True, alpha=0.25)
-        if visible_layers:
-            self.axes.legend()
+        if 0 < len(visible_layers) <= MAX_LEGEND_ENTRIES:
+            self.axes.legend(fontsize="small" if len(visible_layers) > 8 else None)
         self._draw_selected_points()
         self._update_selection_controls()
         self.canvas.draw_idle()
-        self.status_label.setText(f"{len(self.layers)} layer(s) loaded; {len(visible_layers)} visible.")
+        status = f"{len(self.layers)} layer(s) loaded; {len(visible_layers)} visible."
+        if len(visible_layers) > MAX_LEGEND_ENTRIES:
+            status += f" Legend hidden (more than {MAX_LEGEND_ENTRIES} visible layers)."
+        self.status_label.setText(status)

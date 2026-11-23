@@ -79,7 +79,8 @@ def save_layered_plot(
 		axes.set_ylabel("Amplitude (dB)")
 		axes.set_xlim(0, 5000)
 		axes.grid(True, alpha=0.25)
-		axes.legend()
+		if plotted <= 20:  # A legend with more entries would cover the whole plot
+			axes.legend(fontsize="small" if plotted > 8 else None)
 		figure.savefig(output_path, dpi=150)
 	finally:
 		plt.close(figure)

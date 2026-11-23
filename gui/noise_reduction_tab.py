@@ -9,10 +9,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from PySide6.QtWidgets import (
-    QFileDialog,
+    QApplication,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMessageBox,
     QPushButton,
     QVBoxLayout,
@@ -21,24 +20,21 @@ from PySide6.QtWidgets import (
 
 from core.audio_io import load_audio, save_wav
 from core.noise_reduction import NoiseReductionResult, reduce_stationary_noise
-from gui.main_window import PlaceholderTab
+from gui.file_list import AUDIO_EXTENSIONS, AUDIO_FILTER, FileListWidget, output_subfolder, progress_dialog
 
 
 class NoiseReductionTab(QWidget):
     """Controls for selecting, previewing, and saving cleaned audio."""
 
     def __init__(self) -> None:
-        super().__init__(
-        )
+        super().__init__()
         self.selected_path: Path | None = None
         self.original_signal: np.ndarray | None = None
         self.sample_rate: int | None = None
         self.reduction_result: NoiseReductionResult | None = None
 
-        self.path_edit = QLineEdit()
-        self.path_edit.setReadOnly(True)
-        browse_button = QPushButton("Select audio file")
-        browse_button.clicked.connect(self.select_file)
+        self.file_list = FileListWidget(Path("data", "raw_audio"), AUDIO_EXTENSIONS, AUDIO_FILTER)
+        self.file_list.current_path_changed.connect(self.load_file)
 
         self.preview_button = QPushButton("Preview spectrum")
         self.preview_button.setEnabled(False)
@@ -48,11 +44,12 @@ class NoiseReductionTab(QWidget):
         self.reduce_button.setEnabled(False)
         self.reduce_button.clicked.connect(self.reduce_and_save)
 
-        path_row = QHBoxLayout()
-        path_row.addWidget(self.path_edit, stretch=1)
-        path_row.addWidget(browse_button)
+        self.reduce_all_button = QPushButton("Reduce noise and save all")
+        self.reduce_all_button.setToolTip("Process every file in the list and save them as cleaned WAV files.")
+        self.reduce_all_button.setEnabled(False)
+        self.reduce_all_button.clicked.connect(self.reduce_and_save_all)
 
-        self.status_label = QLabel("Select a WAV, MP3, or FLAC recording to begin.")
+        self.status_label = QLabel("Select one or more WAV, MP3 or FLAC recordings, or a whole folder, to begin.")
         self.status_label.setWordWrap(True)
 
         self.figure, self.axes = plt.subplots(figsize=(9, 5), constrained_layout=True)
@@ -65,42 +62,42 @@ class NoiseReductionTab(QWidget):
         button_row = QHBoxLayout()
         button_row.addWidget(self.preview_button)
         button_row.addWidget(self.reduce_button)
+        button_row.addWidget(self.reduce_all_button)
         button_row.addStretch()
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Input recording"))
-        layout.addLayout(path_row)
+        layout.addWidget(QLabel("Input recordings (click a file to preview it)"))
+        layout.addWidget(self.file_list)
         layout.addLayout(button_row)
         layout.addWidget(self.status_label)
         layout.addWidget(self.canvas, stretch=1)
 
-    def select_file(self) -> None:
-        """Open a file picker and reset any previous processing result."""
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select audio recording",
-            str(Path("data", "raw_audio")),
-            "Audio files (*.wav *.mp3 *.flac)",
-        )
-        if not path:
+    def load_file(self, path: Path | None) -> None:
+        """Load the file selected in the list and reset any previous processing result."""
+        self.reduction_result = None
+        self.reduce_all_button.setEnabled(bool(self.file_list.paths()))
+        if path is None:
+            self.selected_path = self.original_signal = self.sample_rate = None
+            self.preview_button.setEnabled(False)
+            self.reduce_button.setEnabled(False)
             return
 
         try:
             signal, sample_rate = load_audio(path)
         except (OSError, RuntimeError, ValueError) as error:
-            QMessageBox.critical(self, "Could not load audio", str(error))
+            self.selected_path = self.original_signal = self.sample_rate = None
+            self.preview_button.setEnabled(False)
+            self.reduce_button.setEnabled(False)
+            self.status_label.setText(f"Could not load {path.name}: {error}")
             return
 
-        self.selected_path = Path(path)
+        self.selected_path = path
         self.original_signal = signal
         self.sample_rate = sample_rate
-        self.reduction_result = None
-        self.path_edit.setText(str(self.selected_path))
         self.preview_button.setEnabled(True)
         self.reduce_button.setEnabled(True)
         self.status_label.setText(
-            f"Loaded {self.selected_path.name} ({sample_rate} Hz, "
-            f"{signal.size / sample_rate:.2f} seconds)."
+            f"Loaded {path.name} ({sample_rate} Hz, {signal.size / sample_rate:.2f} seconds)."
         )
         self.preview_spectrum()
 
@@ -140,14 +137,49 @@ class NoiseReductionTab(QWidget):
             return
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_name = f"{self.selected_path.stem}_cleaned_{timestamp}.wav"
         output_path = save_wav(
-            Path("data", "cleaned_audio", output_name),
+            self._output_path(self.selected_path, timestamp),
             self.reduction_result.cleaned_signal,
             self.reduction_result.sample_rate,
         )
         self.status_label.setText(f"Saved cleaned recording to: {output_path}")
         QMessageBox.information(self, "Noise reduction complete", str(output_path))
+
+    def reduce_and_save_all(self) -> None:
+        """Reduce noise in every listed file and save each one as a cleaned WAV."""
+        paths = self.file_list.paths()
+        if not paths:
+            return
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        progress = progress_dialog(self, "Reducing noise…", len(paths))
+        saved: list[Path] = []
+        failed: list[str] = []
+        for index, path in enumerate(paths):
+            if progress.wasCanceled():
+                break
+            progress.setLabelText(f"Reducing noise in {path.name} ({index + 1}/{len(paths)})…")
+            QApplication.processEvents()
+            try:
+                signal, sample_rate = load_audio(path)
+                result = reduce_stationary_noise(signal, sample_rate)
+                saved.append(save_wav(self._output_path(path, timestamp), result.cleaned_signal, sample_rate))
+            except (OSError, RuntimeError, ValueError) as error:
+                failed.append(f"{path.name}: {error}")
+            progress.setValue(index + 1)
+        progress.close()
+
+        folders = sorted({str(path.parent) for path in saved})
+        message = f"Saved {len(saved)} of {len(paths)} cleaned file(s) to: {', '.join(folders) or '-'}"
+        if failed:
+            message += "\n\nFailed:\n" + "\n".join(failed)
+        self.status_label.setText(message.splitlines()[0])
+        QMessageBox.information(self, "Noise reduction complete", message)
+
+    @staticmethod
+    def _output_path(source: Path, timestamp: str) -> Path:
+        """data/cleaned_audio/<source folder>/<name>_cleaned_<timestamp>.wav"""
+        folder = output_subfolder(source, Path("data", "cleaned_audio"))
+        return folder / f"{source.stem}_cleaned_{timestamp}.wav"
 
     def _plot_spectrum(
         self,

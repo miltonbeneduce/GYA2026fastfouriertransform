@@ -50,10 +50,12 @@ Om signalen klipper, eller om maxlängden nås innan tonen klingat ut, visas en 
 
 Brusreduceringen är den första färdigbyggda funktionen. Användaren kan:
 
-1. Välja en ljudfil via en filväljardialog.
-2. Läsa in filen som en monosignal utan att ändra samplingsfrekvensen.
+1. Välja en eller flera ljudfiler (Ctrl/Shift-klick i filväljaren) eller en hel mapp med **Select folder…**. Filerna visas i en lista sorterad efter namn.
+2. Klicka på en fil i listan för att läsa in den som en monosignal utan att ändra samplingsfrekvensen.
 3. Visa ett spektrum före och efter brusreduceringen.
-4. Spara den behandlade signalen som en ny WAV-fil.
+4. Spara den behandlade signalen som en ny WAV-fil, eller brusreducera och spara alla filer i listan på en gång med **Reduce noise and save all**.
+
+Filer från `data/raw_audio/<mappnamn>/` sparas i `data/cleaned_audio/<mappnamn>/`, så att en inspelningsomgång hålls samlad.
 
 Brusreduceringen använder inte ett enkelt lågpassfilter. Ett lågpassfilter skulle kunna ta bort höga övertoner även om de tillhör själva tonen. I stället används en försiktig spektral gate:
 
@@ -70,25 +72,27 @@ Algoritmen kan fortfarande behöva finjusteras för olika typer av inspelningar.
 
 FFT-fliken är implementerad som en självständig funktion. Användaren kan:
 
-- Välja en WAV-, MP3- eller FLAC-fil med en inspelad ton.
+- Välja en eller flera WAV-, MP3- eller FLAC-filer, eller en hel mapp, och klicka på en fil i listan för att analysera den.
 - Ange ett tonnamn, exempelvis `A4`, och instrument, exempelvis `guitar`.
 - Beräkna en ensidig FFT över hela ljudsignalen.
 - Visa frekvens på x-axeln och amplitud i dB på y-axeln.
 - Normalisera spektrumet så att den starkaste toppen visas som 0 dB.
 - Visa och exportera frekvensområdet 0 till 5000 Hz.
 - Spara både diagrammet som PNG och frekvens/amplitud-paren som CSV.
+- Analysera och spara PNG och CSV för alla filer i listan på en gång med **Analyze and save all** (filnamnet används som tonnamn).
 - Zooma och panorera i diagrammet, markera flera datapunkter och spara urvalet som CSV.
 
-FFT:n använder ett Hann-fönster för att minska läckage från signalens ändpunkter. En fönsterkorrigering används före amplitudberäkningen. Det starkaste synliga FFT-värdet normaliseras till 0 dB, och övriga värden visas relativt toppen. Resultatet sparas i `data/fft_results/` med tonnamn, instrument och tidsstämpel i filnamnet. Om samplingsfrekvensen ger en lägre Nyquistfrekvens än 5000 Hz används den lägre gränsen automatiskt.
+FFT:n använder ett Hann-fönster för att minska läckage från signalens ändpunkter. En fönsterkorrigering används före amplitudberäkningen. Det starkaste synliga FFT-värdet normaliseras till 0 dB, och övriga värden visas relativt toppen. Resultatet sparas i `data/fft_results/` med tonnamn, instrument och tidsstämpel i filnamnet. Filer från en undermapp, till exempel `data/raw_audio/Eriks gitarr/`, sparas i `data/fft_results/Eriks gitarr/`. Om samplingsfrekvensen ger en lägre Nyquistfrekvens än 5000 Hz används den lägre gränsen automatiskt.
 
 ### 4. Lagerjämförelse
 
 Lagerjämförelsefliken är implementerad och arbetar med CSV-filerna från FFT-fliken. Användaren kan:
 
-- Välja flera sparade FFT-resultat samtidigt.
+- Lägga till flera sparade FFT-resultat samtidigt, eller alla CSV-filer i en mapp med **Add folder…**. Nya filer läggs till bland de lager som redan finns, så att resultat från olika mappar (till exempel olika instrument) kan jämföras. Har två filer samma namn visas mappnamnet framför.
+- Visa eller dölja alla lager på en gång med **Show all** och **Hide all**.
 - Visa kurvorna överlagrade i samma diagram.
 - Slå av och på varje lager med en individuell checkbox.
-- Se en legend med lagrens filnamn.
+- Se en legend med lagrens filnamn (döljs när fler än 20 lager visas samtidigt, eftersom den annars täcker diagrammet).
 - Zooma och panorera, markera datapunkter från flera lager och spara urvalet som CSV.
 - Exportera de synliga lagren som en ny PNG-fil.
 
