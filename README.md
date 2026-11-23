@@ -33,7 +33,7 @@ Fliken `Note recorder` gör det snabbt att spela in många enskilda toner, till 
 - Välja instrument: piano med valbart omfång (A0-C8 som standard), gitarr i standardstämning (band 0-12, sträng för sträng från låga E, 78 toner) eller ett eget instrument med namn och tonomfång.
 - Välja mikrofon och ett eget mappnamn, exempelvis `Eriks gitarr`.
 - Mäta rummets brusnivå så att tröskeln för anslag ställs in automatiskt.
-- Se vilken ton som ska spelas härnäst. Inspelningen startar automatiskt vid anslaget och stoppar när tonen har klingat ut.
+- Se vilken ton som ska spelas härnäst. Efter en nedräkning (3 s som standard, kan ändras eller stängas av med 0) startar inspelningen automatiskt vid anslaget och stoppar när tonen har klingat ut. Nedräkningen gör att klicket från musen eller tangentbordet inte tas upp som anslag.
 - Lyssna på tagningen (`L`), ta om den (`R`) och gå vidare till nästa ton (mellanslag).
 
 Varje ton sparas som en FLAC-fil (48 kHz, 24 bit, mono) i `data/raw_audio/<mappnamn>/`, så att filerna direkt kan öppnas i brusreduceringen och FFT-analysen. Filnamnen innehåller instrument, ton och MIDI-nummer, till exempel `piano_C4_060.flac` och `guitar_string6_fret03_G2_043.flac`.

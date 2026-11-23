@@ -5,12 +5,17 @@ stops when the note has decayed and saves a trimmed FLAC file in
 ``data/raw_audio/<folder name>/``. The files can then be opened directly in the
 FFT analysis tab.
 
+Before each note a short countdown runs, so that the click from pressing a
+button (mouse or keyboard) is not picked up as the attack of the note.
+
 Keyboard: Space = next note, R = retake, L = listen to the last take.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+import math
+import time
 
 import numpy as np
 from PySide6.QtCore import Qt, QTimer
@@ -40,7 +45,8 @@ METER_MIN_DB = -80.0
 POLL_MS = 30
 
 # Session modes
-OFF, WAITING, RECORDING, SAVED, FINISHED, MEASURING = range(6)
+OFF, WAITING, RECORDING, SAVED, FINISHED, MEASURING, COUNTDOWN = range(7)
+SESSION_MODES = (COUNTDOWN, WAITING, RECORDING, SAVED, FINISHED)
 
 
 class LevelMeter(QWidget):
@@ -95,6 +101,7 @@ class NoteRecorderTab(QWidget):
         self.measure_owns_stream = False
         self.last_take: np.ndarray | None = None
         self.output_dir = RECORDINGS_ROOT
+        self.countdown_end = 0.0
         self._auto_folder = DEFAULT_FOLDERS[INSTRUMENTS[0]]
 
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -199,6 +206,20 @@ class NoteRecorderTab(QWidget):
         timing_row.addWidget(self.max_length_spin)
         timing_row.addStretch()
         form.addRow("Silence before stop:", timing_row)
+
+        self.countdown_spin = QDoubleSpinBox()
+        self.countdown_spin.setRange(0.0, 10.0)
+        self.countdown_spin.setSingleStep(0.5)
+        self.countdown_spin.setDecimals(1)
+        self.countdown_spin.setValue(3.0)
+        self.countdown_spin.setSuffix(" s")
+        countdown_hint = QLabel("before each note, so the click of the button is not recorded (0 = off)")
+        countdown_hint.setStyleSheet("color: gray;")
+        countdown_row = QHBoxLayout()
+        countdown_row.addWidget(self.countdown_spin)
+        countdown_row.addWidget(countdown_hint)
+        countdown_row.addStretch()
+        form.addRow("Countdown:", countdown_row)
         return self.settings_box
 
     def _build_session(self) -> QVBoxLayout:
@@ -321,7 +342,7 @@ class NoteRecorderTab(QWidget):
     # --------------------------------------------------------------- session
 
     def start_or_stop(self) -> None:
-        if self.mode in (WAITING, RECORDING, SAVED, FINISHED):
+        if self.mode in SESSION_MODES:
             self._end_session()
             return
         if self.mode != OFF:
@@ -387,6 +408,19 @@ class NoteRecorderTab(QWidget):
         self._set_note_font(large=len(item.display) <= 6)
         self.file_label.setText(item.filename)
         self.progress_label.setText(f"Note {self.index + 1} / {len(self.items)}")
+        # Do not listen yet: the click of the button that got us here would otherwise
+        # be detected as the attack. _poll arms the recorder when the countdown ends.
+        self.recorder.disarm()
+        self.countdown_end = time.monotonic() + self.countdown_spin.value()
+        self.mode = COUNTDOWN
+        self._update_countdown()
+        self._update_buttons()
+
+    def _update_countdown(self) -> None:
+        remaining = self.countdown_end - time.monotonic()
+        if remaining > 0:
+            self._status(f"Get ready…  {math.ceil(remaining)}", "#e5a50a")
+            return
         self.recorder.arm(
             float(self.threshold_slider.value()),
             self.silence_spin.value(),
@@ -424,11 +458,12 @@ class NoteRecorderTab(QWidget):
 
     def _update_buttons(self) -> None:
         self.listen_button.setEnabled(self.mode in (SAVED, FINISHED) and self.last_take is not None)
-        self.retake_button.setEnabled(self.mode in (SAVED, FINISHED) or (self.mode == WAITING and self.index > 0))
-        self.skip_button.setEnabled(self.mode in (WAITING, SAVED))
+        self.retake_button.setEnabled(
+            self.mode in (SAVED, FINISHED) or (self.mode in (COUNTDOWN, WAITING) and self.index > 0))
+        self.skip_button.setEnabled(self.mode in (COUNTDOWN, WAITING, SAVED))
         self.next_button.setEnabled(self.mode == SAVED)
         self.measure_button.setEnabled(self.mode in (OFF, FINISHED))
-        running = self.mode in (WAITING, RECORDING, SAVED, FINISHED)
+        running = self.mode in SESSION_MODES
         self.start_button.setText("■  End session" if running else "▶  Start session")
         self.start_button.setEnabled(self.mode != MEASURING)
 
@@ -440,7 +475,7 @@ class NoteRecorderTab(QWidget):
             self._arm_current()
 
     def skip(self) -> None:
-        if self.mode in (WAITING, SAVED):
+        if self.mode in (COUNTDOWN, WAITING, SAVED):
             self.index += 1
             self._arm_current()
 
@@ -451,7 +486,7 @@ class NoteRecorderTab(QWidget):
                 self.index = len(self.items) - 1
             rec.stop_playback()
             self._arm_current()
-        elif self.mode == WAITING and self.index > 0:
+        elif self.mode in (COUNTDOWN, WAITING) and self.index > 0:
             self.index -= 1
             self._arm_current()
 
@@ -481,7 +516,9 @@ class NoteRecorderTab(QWidget):
                 f"Level {recorder.level_db:.0f} dBFS   ·   peak {rec.to_db(recorder.peak):.0f} dBFS"
                 "   ·   red line = threshold")
 
-            if self.mode == WAITING and recorder.state == rec.RECORDING:
+            if self.mode == COUNTDOWN:
+                self._update_countdown()
+            elif self.mode == WAITING and recorder.state == rec.RECORDING:
                 self.mode = RECORDING
                 self._status("● Recording… let the note ring out.", "#c01c28")
                 self._update_buttons()
